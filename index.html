@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mezclador de dos líquidos · MQTT</title>
+<style>
+:root{--bg:#e9eef0;--pn:#fff;--ln:#c5d0d6;--ink:#14232b;--mut:#5d7078;--l1:#1b9aaa;--l2:#f2a33a;--bad:#d1495b;--ok:#2e8b57;--r:10px;color-scheme:light}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0 auto;max-width:1100px;padding:12px;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+h1{font-size:1.2rem;margin:0 8px 0 0}
+h2{font-size:1rem;margin:0 0 8px}
+.bar,.card{background:var(--pn);border:1px solid var(--ln);border-radius:var(--r);padding:12px}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
+.bar label{display:flex;gap:6px;align-items:center;font-size:.8rem;color:var(--mut)}
+input,button{font:inherit}
+input[type=text],input[type=number]{border:1px solid var(--ln);border-radius:6px;padding:7px 8px;width:100%;min-width:0;background:#fff;color:var(--ink)}
+.bar input[type=text]{width:160px}.bar input[type=number]{width:72px}
+button{border:0;border-radius:8px;padding:10px 14px;min-height:44px;background:var(--ink);color:#fff;cursor:pointer}
+button.l1{background:var(--l1)}button.l2{background:var(--l2);color:var(--ink)}button.bad{background:var(--bad)}
+button.ghost{background:#dfe7ea;color:var(--ink)}button.on{background:var(--ink);color:#fff;box-shadow:0 0 0 3px var(--ok)}
+button:disabled{opacity:.45;cursor:default}
+:focus-visible{outline:3px solid #2563eb;outline-offset:2px}
+input[type=range]{width:100%;height:30px;accent-color:var(--ink)}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(290px,1fr))}
+.row{display:flex;justify-content:space-between;font-size:.85rem;color:var(--mut)}
+.row b{color:var(--ink);font-variant-numeric:tabular-nums}
+.sub{border-top:1px solid var(--ln);padding-top:10px;margin-top:10px;display:grid;gap:4px}
+.sub:first-of-type{border:0;margin:0;padding:0}
+.g2,.g3{display:grid;gap:8px}.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr);margin-top:10px}
+.f{display:flex;flex-direction:column;gap:3px;font-size:.8rem;color:var(--mut)}
+.tabs{display:flex;gap:8px;margin-bottom:12px}.tabs button{flex:1}
+#stat{font-size:.85rem;color:var(--bad);font-weight:600}#stat.ok{color:var(--ok)}
+.auto{display:grid;gap:12px;grid-template-columns:1fr}
+@media(min-width:800px){.auto{grid-template-columns:minmax(300px,420px) 1fr}}
+.tankwrap{display:flex;flex-direction:column;align-items:center;gap:10px}
+.tw{display:flex;gap:6px;align-items:stretch}
+.tank{position:relative;width:180px;height:330px;border:3px solid var(--ink);border-top:0;border-radius:0 0 24px 24px;overflow:hidden;background:#f4f8f9}
+.tank i{position:absolute;left:0;right:0;transition:height .12s linear}
+#v1{bottom:0;height:0;background:var(--l1)}#v2{bottom:0;height:0;background:var(--l2)}
+.tank s{position:absolute;left:0;right:0;height:0;border-top:1px dashed rgba(20,35,43,.5);font:10px/1.3 ui-monospace,monospace;padding-left:4px;text-decoration:none}
+.vs{position:relative;width:36px;height:330px}
+.vs input{position:absolute;left:50%;top:50%;width:330px;margin:0;transform:translate(-50%,-50%) rotate(-90deg)}
+.sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin:0 4px -1px 10px}
+#steps{margin:12px 0 0;padding-left:20px;color:var(--mut)}
+#steps .on{color:var(--l1);font-weight:700}#steps .done{color:var(--ok)}#steps .skip{text-decoration:line-through}
+#msg{min-height:1.3em;margin:8px 0 0;color:var(--bad);font-size:.85rem}
+#log{margin-top:12px;height:96px;overflow:auto;font:11px/1.5 ui-monospace,monospace;color:var(--mut)}
+</style>
+</head>
+<body>
+<div class="bar">
+  <h1>Mezclador de dos líquidos</h1>
+  <label>Servidor <input type="text" id="host" value="broker.hivemq.com" autocapitalize="off"></label>
+  <label>Puerto <input type="number" id="port" value="8884"></label>
+  <label><input type="checkbox" id="ssl" checked> Seguro (wss)</label>
+  <label>Prefijo de temas <input type="text" id="pre" value="mezclador_udfjc_7391" autocapitalize="off"></label>
+  <button id="bc">Conectar</button><span id="stat">Desconectado</span>
+  <span class="row">Sensor físico:&nbsp;<b id="phys">–</b></span>
+  <button class="bad" id="bp">Parar todo</button>
+</div>
+
+<div class="tabs"><button class="ghost" id="tm">Manual</button><button class="ghost" id="ta">Automático</button></div>
+
+<!-- MANUAL -->
+<section id="man" class="grid">
+  <div class="card"><h2>Llenado</h2><div id="liq"></div></div>
+  <div class="card"><h2>Mezclado</h2>
+    <div class="row"><span>Velocidad</span><b id="dvT"></b></div>
+    <input type="range" id="dv" min="0" max="100" value="50">
+    <div class="g3"><button class="ghost" id="dl">Izquierda</button><button class="ghost on" id="ds">Parar</button><button class="ghost" id="dr">Derecha</button></div>
+  </div>
+  <div class="card"><h2>Desocupado</h2>
+    <div class="row"><span>Apertura del servo</span><b id="vsT"></b></div>
+    <input type="range" id="vs" min="0" max="100" value="0" data-g="1.8">
+    <button class="ghost" id="vc" style="width:100%;margin-top:10px">Cerrar (0%)</button>
+  </div>
+</section>
+
+<!-- AUTOMÁTICO -->
+<section id="auto" class="auto" hidden>
+  <div class="card" id="form">
+    <h2>Instrucciones</h2>
+    <div class="g2">
+      <label class="f">Líquido 1: cantidad (%)<input type="number" id="q1" min="0" max="100" value="30" inputmode="numeric"></label>
+      <label class="f">Líquido 1: apertura (%)<input type="number" id="o1" min="0" max="100" value="40" inputmode="numeric"></label>
+      <label class="f">Líquido 2: cantidad (%)<input type="number" id="q2" min="0" max="100" value="70" inputmode="numeric"></label>
+      <label class="f">Líquido 2: apertura (%)<input type="number" id="o2" min="0" max="100" value="25" inputmode="numeric"></label>
+      <label class="f">Mezclado: velocidad (%)<input type="number" id="mv" min="0" max="100" value="60" inputmode="numeric"></label>
+      <label class="f">Mezclado: tiempo (0–60 s)<input type="number" id="mt" min="0" max="60" value="20" inputmode="numeric"></label>
+      <label class="f">Desocupar: servo (%)<input type="number" id="sv" min="0" max="100" value="100" inputmode="numeric"></label>
+    </div>
+    <div class="row" style="margin:10px 0">Capacidad usada del tarro <b id="cap">100%</b></div>
+    <div class="g2"><button id="go">Enviar</button><button class="bad" id="cn">Cancelar</button></div>
+    <ol id="steps"><li id="s1">Llenar líquido 1</li><li id="s2">Llenar líquido 2</li><li id="s3">Mezclar</li><li id="s4">Desocupar</li></ol>
+    <p id="msg" role="status"></p>
+  </div>
+  <div class="card tankwrap">
+    <div class="tw">
+      <div class="tank" id="tank"><i id="v2"></i><i id="v1"></i></div>
+      <div class="vs"><input type="range" id="sens" min="0" max="100" step="0.1" value="0" disabled aria-label="Sensor simulado"></div>
+    </div>
+    <div class="row" style="width:100%;max-width:260px"><span>Sensor (simulado)</span><b id="sensT">0%</b></div>
+    <div><span class="sw" style="background:var(--l1)"></span>Líquido 1<span class="sw" style="background:var(--l2)"></span>Líquido 2</div>
+  </div>
+</section>
+
+<div class="card" id="log" aria-live="polite"></div>
+
+<script>
+const $=id=>document.getElementById(id),sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const MS_PCT=82; // ms que tarda el paso a paso por cada 1% de apertura (4096 medios pasos × 2 ms ÷ 100). Igual que PASO_MS en main.py
+let conn=false,dcDir='stop',phys=0;
+const A={id:0,run:false,mode:null,rate:0,goal:0,v1:0,v2:0};
+
+function log(t){const d=document.createElement('div');d.textContent=new Date().toLocaleTimeString()+'  '+t;const l=$('log');l.append(d);while(l.children.length>40)l.firstChild.remove();l.scrollTop=l.scrollHeight}
+
+/* ---------- Cliente MQTT 3.1.1 mínimo sobre WebSocket (no necesita librerías) ---------- */
+const enc=new TextEncoder(),dec=new TextDecoder();
+const MQ={ws:null,pi:0,
+  s(t){const b=enc.encode(t);return[b.length>>8,b.length&255,...b]},
+  pk(h,body){let n=body.length,r=[];do{let d=n&127;n>>=7;if(n)d|=128;r.push(d)}while(n);return new Uint8Array([h,...r,...body])},
+  tx(a){if(this.ws&&this.ws.readyState===1)this.ws.send(a)},
+  open(url,id,wt,wm,onok,onmsg,onend){
+    const w=this.ws=new WebSocket(url,'mqtt');w.binaryType='arraybuffer';let buf=[];
+    w.onopen=()=>{const m=enc.encode(wm);this.tx(this.pk(0x10,[...this.s('MQTT'),4,0x06,0,30,...this.s(id),...this.s(wt),m.length>>8,m.length&255,...m]));this.pi=setInterval(()=>this.tx(new Uint8Array([0xC0,0])),15000)};
+    w.onmessage=e=>{buf.push(...new Uint8Array(e.data));
+      while(buf.length>=2){let i=1,n=0,m=1,b;
+        do{if(i>=buf.length)return;b=buf[i++];n+=(b&127)*m;m*=128}while(b&128);
+        if(buf.length<i+n)return;
+        const p=buf.splice(0,i+n),h=p[0],q=p.slice(i),t=h>>4;
+        if(t===2){if(q[1]===0)onok();else onend('El broker rechazó la conexión ('+q[1]+')')}
+        else if(t===3){const tl=(q[0]<<8)|q[1];let o=2+tl;const top=dec.decode(new Uint8Array(q.slice(2,o)));
+          if((h>>1)&3){this.tx(new Uint8Array([0x40,2,q[o],q[o+1]]));o+=2}
+          onmsg(top,dec.decode(new Uint8Array(q.slice(o))))}}};
+    w.onclose=()=>{clearInterval(this.pi);onend('Conexión cerrada')};
+  },
+  sub(t){this.tx(this.pk(0x82,[0,1,...this.s(t),0]))},
+  pub(t,m){this.tx(this.pk(0x30,[...this.s(t),...enc.encode(m)]))},
+  close(){this.tx(new Uint8Array([0xE0,0]));if(this.ws)this.ws.close()}
+};
+
+const B=()=>$('pre').value.trim();
+function pub(k,v){if(!conn){log('Sin conexión al broker.');return false}MQ.pub(B()+'/'+k,typeof v==='string'?v:JSON.stringify(v));return true}
+function setConn(c,t){conn=c;$('stat').textContent=t;$('stat').className=c?'ok':'';$('bc').textContent=c?'Desconectar':'Conectar'}
+$('ssl').onchange=()=>$('port').value=$('ssl').checked?8884:8000;
+try{const c=JSON.parse(localStorage.getItem('mezcla')||'{}');['host','port','pre'].forEach(k=>{if(c[k])$(k).value=c[k]});if('ssl'in c)$('ssl').checked=c.ssl}catch(e){}
+$('bc').onclick=()=>{
+  if(conn){pub('web','offline');MQ.close();return}
+  try{localStorage.setItem('mezcla',JSON.stringify({host:$('host').value,port:$('port').value,pre:$('pre').value,ssl:$('ssl').checked}))}catch(e){}
+  const url=($('ssl').checked?'wss':'ws')+'://'+$('host').value.trim()+':'+$('port').value+'/mqtt';
+  setConn(false,'Conectando…');
+  MQ.open(url,'web_'+Math.random().toString(16).slice(2,10),B()+'/web','offline',
+    ()=>{setConn(true,'Conectado');MQ.sub(B()+'/nivel');MQ.sub(B()+'/info');pub('web','online');log('Conectado a '+url)},
+    (t,m)=>{if(t.endsWith('/nivel')){const v=parseInt(m);if(v>=0&&v<=100){phys=v;$('phys').textContent=v+'%';limites()}}else log('ESP32: '+m.slice(0,80))},
+    r=>{if(A.run)cancelar(false);setConn(false,'Desconectado');log(r)});
+};
+
+/* ---------- Pestañas y lecturas de sliders ---------- */
+function tab(t){$('man').hidden=t!=='man';$('auto').hidden=t!=='auto';$('tm').classList.toggle('on',t==='man');$('ta').classList.toggle('on',t==='auto')}
+$('tm').onclick=()=>tab('man');$('ta').onclick=()=>tab('auto');
+
+$('liq').innerHTML=[1,2].map(n=>`<div class="sub"><b style="color:${n==1?'var(--l1)':'#b87410'}">Líquido ${n}</b>
+ <div class="row"><span>Cantidad a llenar</span><b id="f${n}T"></b></div><input type="range" id="f${n}" min="0" max="100" value="${n==1?30:70}">
+ <div class="row"><span>Apertura del paso a paso</span><b id="p${n}T"></b></div><input type="range" id="p${n}" min="0" max="100" value="${n==1?40:25}" data-g="3.6">
+ <button class="l${n}" onclick="llenar(${n})">Llenar líquido ${n}</button></div>`).join('');
+document.querySelectorAll('input[type=range]').forEach(r=>{
+  const f=()=>{const t=$(r.id+'T');if(t)t.textContent=r.value+'%'+(r.dataset.g?' · '+Math.round(r.value*r.dataset.g)+'°':'')};
+  r.addEventListener('input',f);f()});
+function limites(){const m=Math.max(0,100-phys);['f1','f2'].forEach(i=>{const s=$(i);s.max=m;if(+s.value>m)s.value=m;s.dispatchEvent(new Event('input'))})}
+
+/* ---------- Manual ---------- */
+function llenar(n){const q=+$('f'+n).value,o=+$('p'+n).value;
+  if(!q||!o)return log('Pon una cantidad y una apertura mayores a 0.');
+  if(pub('llenar',{n,q,o}))log(`Líquido ${n}: llenar ${q}% con apertura ${o}%`)}
+const dcSend=()=>pub('dc',{vel:+$('dv').value,dir:dcDir});
+function dcSet(d,send=true){dcDir=d;[['dl','left'],['ds','stop'],['dr','right']].forEach(([i,x])=>$(i).classList.toggle('on',x===d));if(send)dcSend()}
+$('dl').onclick=()=>dcSet('left');$('ds').onclick=()=>dcSet('stop');$('dr').onclick=()=>dcSet('right');
+let lt=0;const thr=f=>()=>{const n=Date.now();if(n-lt>120){lt=n;f()}};
+$('dv').addEventListener('input',thr(()=>dcDir!=='stop'&&dcSend()));$('dv').addEventListener('change',()=>dcDir!=='stop'&&dcSend());
+$('vs').addEventListener('input',thr(()=>pub('servo',$('vs').value)));$('vs').addEventListener('change',()=>pub('servo',$('vs').value));
+$('vc').onclick=()=>{$('vs').value=0;$('vs').dispatchEvent(new Event('input'));pub('servo','0')};
+$('bp').onclick=()=>{if(A.run)cancelar(false);pub('parar','1');dcSet('stop',false);$('vs').value=0;$('vs').dispatchEvent(new Event('input'));log('Parada total enviada')};
+
+/* ---------- Automático: tarro y sensor simulado ---------- */
+for(let i=1;i<=10;i++){const s=document.createElement('s');s.style.bottom=i*10+'%';s.textContent=i*10+'%';$('tank').append(s)}
+function render(){const t=A.v1+A.v2;$('v1').style.height=A.v1+'%';$('v2').style.bottom=A.v1+'%';$('v2').style.height=A.v2+'%';$('sens').value=t;$('sensT').textContent=Math.round(t)+'%'}
+setInterval(()=>{const m=A.mode;
+  if(m==='fill1')A.v1=Math.min(A.goal-A.v2,A.v1+A.rate);
+  else if(m==='fill2')A.v2=Math.min(A.goal-A.v1,A.v2+A.rate);
+  else if(m==='drain'){const t=A.v1+A.v2;if(t>0){const f=Math.max(0,t-A.rate)/t;A.v1*=f;A.v2*=f}}
+  if(m)render()},100);
+$('sens').addEventListener('input',e=>{if(!e.isTrusted)return;const v=+$('sens').value,t=A.v1+A.v2; // el usuario mueve el "sensor"
+  if(A.mode==='fill2')A.v2=Math.max(0,v-A.v1);else if(A.mode==='fill1'||t===0)A.v1=Math.max(0,v-A.v2);else{const f=v/t;A.v1*=f;A.v2*=f}render()});
+function clampA(){const g=i=>+$(i).value||0;document.querySelectorAll('#form input').forEach(e=>{const mx=e.id==='q1'?100-g('q2'):e.id==='q2'?100-g('q1'):+e.max;if(+e.value>mx)e.value=mx;if(+e.value<0)e.value=0});$('cap').textContent=(g('q1')+g('q2'))+'%'}
+document.querySelectorAll('#form input').forEach(e=>e.addEventListener('input',clampA));
+const step=(n,s)=>$('s'+n).className=s,st=t=>$('msg').textContent=t;
+function lock(b){document.querySelectorAll('#form input').forEach(i=>i.disabled=b);$('go').disabled=b;$('sens').disabled=!b}
+
+function cancelar(irManual=true){A.id++;A.run=false;A.mode=null;pub('parar','1');A.v1=A.v2=0;render();[1,2,3,4].forEach(n=>step(n,''));lock(false);st('');if(irManual){dcSet('stop',false);tab('man')}}
+$('cn').onclick=()=>cancelar(true);
+
+$('go').onclick=async()=>{
+  if(!conn)return st('Primero conecta al broker.');
+  clampA();const g=i=>+$(i).value||0,q1=g('q1'),o1=g('o1'),q2=g('q2'),o2=g('o2'),mv=g('mv'),mt=Math.min(60,g('mt')),sv=g('sv');
+  if(q1+q2>100)return st('La suma de los líquidos supera el 100% del tarro.');
+  if((q1&&!o1)||(q2&&!o2))return st('Un líquido con cantidad necesita apertura mayor a 0%.');
+  if(!q1&&!q2)return st('Pon la cantidad de al menos un líquido.');
+  st('');A.v1=A.v2=0;A.mode=null;A.run=true;render();lock(true);[1,2,3,4].forEach(n=>step(n,''));
+  const my=++A.id,chk=()=>{if(A.id!==my)throw'abort'};
+  const wt=async ms=>{const e=Date.now()+ms;while(Date.now()<e){chk();await sleep(50)}};
+  const until=async f=>{while(!f()){chk();await sleep(100)}};
+  let cur=0;const valve=async o=>{pub('valvula',String(o));await wt(Math.abs(o-cur)*MS_PCT);cur=o};
+  try{
+    for(const[n,q,o]of[[1,q1,o1],[2,q2,o2]]){
+      if(!q){step(n,'skip');continue}
+      step(n,'on');await valve(o);A.goal=Math.min(100,A.v1+A.v2+q);A.rate=o/100;A.mode='fill'+n;
+      await until(()=>A.v1+A.v2>=A.goal-0.01);A.mode=null;await valve(0);step(n,'done');
+      
+      // ⏱️ Pausa de 2 segundos antes de pasar al siguiente paso o líquido
+      await wt(2000); 
+    }
+    step(3,'on');
+    if(mv>0&&mt>0){const end=Date.now()+mt*1000;let d='right';
+      while(Date.now()<end){pub('dc',{vel:mv,dir:d});await wt(Math.min(5000,end-Date.now()));d=d==='right'?'left':'right'}}
+    pub('dc',{vel:0,dir:'stop'});step(3,'done');
+    step(4,'on');
+    if(sv>0){pub('servo',String(sv));A.rate=sv/100;A.mode='drain';await until(()=>A.v1+A.v2<=0.05);A.mode=null;await wt(600);pub('servo','0');st('Proceso terminado.')}
+    else st('Servo en 0%: el tarro no se vacía.');
+    step(4,'done');
+  }catch(e){if(e!=='abort'){pub('parar','1');st('Error: '+e)}}
+  finally{if(A.id===my){A.run=false;A.mode=null;lock(false)}}
+};
+
+tab('man');clampA();render();
+log('Listo. Conecta al broker y usa el mismo prefijo en main.py.');
+</script>
+</body>
+</html>
