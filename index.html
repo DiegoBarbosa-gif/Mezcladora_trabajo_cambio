@@ -106,6 +106,21 @@ input[type=range]{width:100%;height:30px;accent-color:var(--ink)}
   </div>
 </section>
 
+<!-- MANUAL -->
+<section id="man" class="grid">
+  <div class="card"><h2>Llenado</h2><div id="liq"></div></div>
+  <div class="card"><h2>Mezclado</h2>
+    <div class="row"><span>Velocidad</span><b id="dvT"></b></div>
+    <input type="range" id="dv" min="0" max="100" value="50">
+    <div class="g3"><button class="ghost" id="dl">Izquierda</button><button class="ghost on" id="ds">Parar</button><button class="ghost" id="dr">Derecha</button></div>
+  </div>
+  <div class="card"><h2>Desocupado</h2>
+    <div class="row"><span>Apertura del servo</span><b id="vsT"></b></div>
+    <input type="range" id="vs" min="0" max="100" value="0" data-g="1.8">
+    <button class="ghost" id="vc" style="width:100%;margin-top:10px">Cerrar (0%)</button>
+  </div>
+</section>
+  
 <div class="card" id="log" aria-live="polite"></div>
 
 <script>
